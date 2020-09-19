@@ -54,7 +54,7 @@ func applySecurityDefaults(req *v1beta1.AdmissionRequest) ([]patchOperation, err
 		log.Printf("expect resource to be %s", podResource)
 		return nil, nil
 	}
-
+    log.Print("Into applySecurityDefaults")
 	// Parse the Pod object.
 	raw := req.Object.Raw
 	pod := corev1.Pod{}
