@@ -65,10 +65,12 @@ func applySecurityDefaults(req *v1beta1.AdmissionRequest) ([]patchOperation, err
 	// Retrieve the `runAsNonRoot` and `runAsUser` values.
 	var runAsNonRoot *bool
 	var runAsUser *int64
+	//var sparkJobOwner *string = pod.Metadata.labels
 	if pod.Spec.SecurityContext != nil {
 		runAsNonRoot = pod.Spec.SecurityContext.RunAsNonRoot
 		runAsUser = pod.Spec.SecurityContext.RunAsUser
 	}
+	fmt.Printf("%#v\n", pod.Metadata)
 
 	// Create patch operations to apply sensible defaults, if those options are not set explicitly.
 	var patches []patchOperation
