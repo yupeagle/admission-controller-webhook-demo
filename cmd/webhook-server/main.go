@@ -17,14 +17,19 @@ limitations under the License.
 package main
 
 import (
+        b64 "encoding/base64"
+        "context"
 	"errors"
 	"fmt"
 	"k8s.io/api/admission/v1beta1"
+        "k8s.io/client-go/tools/clientcmd"
+        "k8s.io/client-go/kubernetes"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"log"
 	"net/http"
 	"path/filepath"
+        "strings"
 )
 
 const (
@@ -50,6 +55,11 @@ func applySecurityDefaults(req *v1beta1.AdmissionRequest) ([]patchOperation, err
 	// This handler should only get called on Pod objects as per the MutatingWebhookConfiguration in the YAML file.
 	// However, if (for whatever reason) this gets invoked on an object of a different kind, issue a log message but
 	// let the object request pass through otherwise.
+	config, err := clientcmd.BuildConfigFromFlags("", "")
+	clientset, err := kubernetes.NewForConfig(config)
+        if err != nil {
+		log.Fatal(err)
+        }
 	if req.Resource != podResource {
 		log.Printf("expect resource to be %s", podResource)
 		return nil, nil
@@ -61,19 +71,30 @@ func applySecurityDefaults(req *v1beta1.AdmissionRequest) ([]patchOperation, err
 	if _, _, err := universalDeserializer.Decode(raw, nil, &pod); err != nil {
 		return nil, fmt.Errorf("could not deserialize pod object: %v", err)
 	}
+	if !strings.Contains(req.UserInfo.Username, "@") {
+                fmt.Printf("Requester: %s. Not from AD, passing\n", req.UserInfo.Username)
+		return nil, nil
+        }
 
 	// Retrieve the `runAsNonRoot` and `runAsUser` values.
-	var runAsNonRoot *bool
-	var runAsUser *int64
+	// var runAsNonRoot *bool
+	// var runAsUser *int64
 	//var sparkJobOwner *string = pod.Metadata.labels
-	if pod.Spec.SecurityContext != nil {
+	/* if pod.Spec.SecurityContext != nil {
 		runAsNonRoot = pod.Spec.SecurityContext.RunAsNonRoot
 		runAsUser = pod.Spec.SecurityContext.RunAsUser
-	}
-	fmt.Printf("%#v\n", pod.Metadata)
-
+	} */
+	getpod, err2 := clientset.CoreV1().Pods("default").Get(context.TODO(),"pod-with-defaults", metav1.GetOptions{})
+	fmt.Printf("%#v\n", getpod)
+	fmt.Printf("%#v\n", err2)
+	fmt.Printf("=============================================")
+	fmt.Printf("%#v\n", pod.ObjectMeta.Labels["sparkJobOwner"])
+	fmt.Printf("%#v\n", pod)
+	fmt.Printf("%#v\n", req.UserInfo.Username)
+	owner, _ := b64.StdEncoding.DecodeString(pod.ObjectMeta.Labels["sparkJobOwner"])
 	// Create patch operations to apply sensible defaults, if those options are not set explicitly.
-	var patches []patchOperation
+	/*
+        var patches []patchOperation
 	if runAsNonRoot == nil {
 		patches = append(patches, patchOperation{
 			Op:    "add",
@@ -94,8 +115,13 @@ func applySecurityDefaults(req *v1beta1.AdmissionRequest) ([]patchOperation, err
 		// Make sure that the settings are not contradictory, and fail the object creation if they are.
 		return nil, errors.New("runAsNonRoot specified, but runAsUser set to 0 (the root user)")
 	}
-
-	return patches, nil
+        */
+        ownerTrimmed := strings.TrimSpace(string(owner))
+        if ownerTrimmed != req.UserInfo.Username {
+                errorMsg := fmt.Sprintf("You are mutating pods which are not owned by you, requester: %s, owner: %s, before: %s", req.UserInfo.Username, ownerTrimmed, string(owner))
+		return nil, errors.New(errorMsg)
+        }
+	return nil, nil
 }
 
 func main() {
